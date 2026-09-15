@@ -6,8 +6,9 @@ from datafeeds import market_df
 
 async def analyze_symbol(symbol:str, asset_type:str, vix_bias:str='neutral'):
     dfs={}
+    sources={}
     for tf in ['1h','4h','12h','1d']:
-        dfs[tf]=await market_df(symbol,tf,asset_type)
+        dfs[tf], sources[tf] = await market_df(symbol,tf,asset_type)
 
     long=0.0; short=0.0; reasons=[]
     for tf,w in [('12h',14),('4h',11),('1d',8)]:
@@ -77,5 +78,6 @@ async def analyze_symbol(symbol:str, asset_type:str, vix_bias:str='neutral'):
         'long_score':lscore,'short_score':sscore,'gap':round(confidence_gap,1),'price':price,
         'one_hour_candles':c1,'fib':fib,'wyckoff':wy,'volume_ratio_4h':round(vr,2),
         'liquidity_sweep':sweep,'support_resistance':sr,'pattern':pattern,
+        'sources':sources, 'data_source': sources.get('1h','-'),
         'reasons':reasons[-16:],'updated_at':int(time.time())
     }

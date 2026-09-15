@@ -12,7 +12,7 @@ def set_external(bias:str, score:float=0.0):
 def get_external(): return _external
 
 def _dl(sym, period='60d', interval='1h'):
-    x=yf.download(sym,period=period,interval=interval,auto_adjust=False,progress=False,threads=False)
+    x=yf.download(sym,period=period,interval=interval,auto_adjust=False,progress=False,threads=False,timeout=10)
     if x.empty: raise RuntimeError(sym)
     if isinstance(x.columns,pd.MultiIndex): x.columns=x.columns.get_level_values(0)
     x=x.reset_index().rename(columns={'Datetime':'ts','Date':'ts','Open':'open','High':'high','Low':'low','Close':'close','Volume':'volume'})

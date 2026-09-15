@@ -1,9 +1,23 @@
-# Streamlit deployment fix
-This package is the Streamlit-compatible dashboard build.
+Hadar Live Trading Bot v2.3 Resilient UI
 
-Deploy on Streamlit Community Cloud with:
-- Repository: your `hadar-live-trading-bot` repo
-- Branch: `main`
-- Main file: `app.py`
+What changed
+- Friendlier, lighter Streamlit dashboard with color badges, tabs, and cleaner cards.
+- Crypto data is now more resilient:
+  1) data-api.binance.vision
+  2) api1.binance.com
+  3) api2.binance.com
+  4) api3.binance.com
+  5) api.binance.com
+  6) Yahoo fallback (ex: BTCUSDT -> BTC-USD)
+- Each symbol now shows the data source used.
+- The page should be easier to read on mobile and less overloaded.
 
-Important: this dashboard scans while the app is active. For true 24/7 background alerts/webhooks, the original FastAPI service should be deployed to an always-on service (Render/Railway/Fly/etc.) separately.
+How to update GitHub
+Upload/replace at least these files:
+- app.py
+- datafeeds.py
+- engine.py
+- README_DEPLOY.md (optional)
+
+Then in Streamlit:
+- Manage app -> Reboot app
