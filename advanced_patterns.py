@@ -95,3 +95,102 @@ def flag_wedge_pattern(df: pd.DataFrame, lookback=70):
     if converging and hn<0 and ln<0 and hn<ln: pattern='falling_wedge'; conf=max(conf,.68)
     return {'pattern':pattern,'confidence':round(min(conf,1.0),2),'high_slope':round(hn,6),'low_slope':round(ln,6),
             'impulse':'bullish' if bull_imp else 'bearish'}
+
+
+def market_regime(df: pd.DataFrame, lookback=90):
+    """Classify market state as trend/range/transition using swing structure + EMA slope + compression."""
+    from indicators import ema
+    x=df.tail(lookback).copy().reset_index(drop=True)
+    if len(x)<35:
+        return {'regime':'unknown','direction':'neutral','strength':0.0}
+    st=structure(x)
+    e20=ema(x.close,20); e50=ema(x.close,50)
+    slope20=float(e20.iloc[-1]-e20.iloc[-8])/max(abs(float(x.close.iloc[-1])),1e-9)
+    spread=abs(float(e20.iloc[-1]-e50.iloc[-1]))/max(abs(float(x.close.iloc[-1])),1e-9)
+    a=float(atr(x,14).iloc[-1]); price=max(abs(float(x.close.iloc[-1])),1e-9)
+    volnorm=a/price
+    pos=(float(x.close.iloc[-1])-float(x.low.tail(50).min()))/max(float(x.high.tail(50).max()-x.low.tail(50).min()),1e-9)
+    if st in ('bullish','bearish') and (abs(slope20)>0.002 or spread>0.006):
+        strength=min(1.0, .45+abs(slope20)*40+spread*15)
+        return {'regime':'trend','direction':st,'strength':round(strength,2),'range_position':round(pos,2)}
+    if st=='range' and spread<0.008 and abs(slope20)<0.003:
+        strength=min(1.0,.55+max(0,.008-spread)*20)
+        return {'regime':'range','direction':'neutral','strength':round(strength,2),'range_position':round(pos,2)}
+    direction='bullish' if slope20>0 else 'bearish' if slope20<0 else 'neutral'
+    return {'regime':'transition','direction':direction,'strength':round(min(1.0,.35+volnorm*12),2),'range_position':round(pos,2)}
+
+
+def bos_choch(df: pd.DataFrame, lookback=120):
+    """Heuristic BOS/CHoCH from recent confirmed swing highs/lows and current close."""
+    x=df.tail(lookback).copy().reset_index(drop=True)
+    hs=pivots(x.high,3,3,'high'); ls=pivots(x.low,3,3,'low')
+    if len(hs)<2 or len(ls)<2:
+        return {'event':'none','direction':'none','level':None,'strength':0.0}
+    prev_h=float(x.high.iloc[hs[-1]])
+    prev_l=float(x.low.iloc[ls[-1]])
+    close=float(x.close.iloc[-1])
+    st_before=structure(x.iloc[:-1]) if len(x)>20 else 'range'
+    a=max(float(atr(x,14).iloc[-1]),1e-9)
+    if close>prev_h:
+        event='BOS' if st_before=='bullish' else 'CHoCH'
+        strength=min(1.0,.5+(close-prev_h)/a*.25)
+        return {'event':event,'direction':'bullish','level':prev_h,'strength':round(strength,2)}
+    if close<prev_l:
+        event='BOS' if st_before=='bearish' else 'CHoCH'
+        strength=min(1.0,.5+(prev_l-close)/a*.25)
+        return {'event':event,'direction':'bearish','level':prev_l,'strength':round(strength,2)}
+    return {'event':'none','direction':'none','level':None,'strength':0.0}
+
+
+def impulse_fib(df: pd.DataFrame, lookback=180):
+    """Select the latest relevant impulse from alternating pivots, then evaluate 0.50-0.618 pullback."""
+    x=df.tail(lookback).copy().reset_index(drop=True)
+    hs=pivots(x.high,4,4,'high'); ls=pivots(x.low,4,4,'low')
+    points=[]
+    for i in hs: points.append((i,'H',float(x.high.iloc[i])))
+    for i in ls: points.append((i,'L',float(x.low.iloc[i])))
+    points.sort(key=lambda z:z[0])
+    if len(points)<3:
+        return {'status':'none','direction':'none','in_zone':False}
+    # Latest completed impulse ending at a confirmed pivot, favor larger moves relative to ATR.
+    a=max(float(atr(x,14).iloc[-1]),1e-9)
+    candidates=[]
+    for j in range(1,len(points)):
+        p0,p1=points[j-1],points[j]
+        if p0[1]==p1[1]:
+            continue
+        move=abs(p1[2]-p0[2])
+        bars=max(1,p1[0]-p0[0])
+        quality=(move/a) * min(1.5, bars/8)
+        candidates.append((p1[0],quality,p0,p1))
+    if not candidates:
+        return {'status':'none','direction':'none','in_zone':False}
+    # Last meaningful impulse: among recent 5 choose quality-aware latest.
+    recent=candidates[-5:]
+    _,quality,p0,p1=max(recent,key=lambda c:(c[0] + min(c[1],10)*1.5))
+    if p0[1]=='L' and p1[1]=='H':
+        direction='bullish'; low=p0[2]; high=p1[2]; end_idx=p1[0]
+        rng=high-low
+        z50=high-.50*rng; z618=high-.618*rng
+        p=float(x.close.iloc[-1]); lo=min(z50,z618); hi=max(z50,z618)
+        in_zone=lo<=p<=hi
+        invalid=p<low
+        post=x.iloc[end_idx:]
+        healthy=in_zone and not invalid and structure(post)!='bearish'
+    else:
+        direction='bearish'; high=p0[2]; low=p1[2]; end_idx=p1[0]
+        rng=high-low
+        z50=low+.50*rng; z618=low+.618*rng
+        p=float(x.close.iloc[-1]); lo=min(z50,z618); hi=max(z50,z618)
+        in_zone=lo<=p<=hi
+        invalid=p>high
+        post=x.iloc[end_idx:]
+        healthy=in_zone and not invalid and structure(post)!='bullish'
+    depth=((high-p)/rng if direction=='bullish' else (p-low)/rng) if rng>0 else 0
+    return {
+        'status':'healthy_pullback' if healthy else 'in_zone' if in_zone else 'watch',
+        'direction':direction,'in_zone':in_zone,'invalid':invalid,
+        'swing_low':round(low,8),'swing_high':round(high,8),
+        'zone_low':round(lo,8),'zone_high':round(hi,8),'price':round(p,8),
+        'retracement':round(depth,3),'impulse_quality':round(min(1.0,quality/8),2)
+    }

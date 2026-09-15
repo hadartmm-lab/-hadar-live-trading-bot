@@ -1,373 +1,200 @@
 from __future__ import annotations
-import asyncio
-import time
-import math
+import asyncio, time, math, html
 import streamlit as st
-
 from config import settings
 from engine import analyze_symbol
 from vix_engine import analyze_internal_vix
 
-st.set_page_config(page_title="Hadar Live Trading Bot", page_icon="📈", layout="wide")
+st.set_page_config(page_title='Hadar Alpha Arena', page_icon='⚡', layout='wide')
 
-st.markdown("""
+st.markdown(r"""
 <style>
-:root {
-  --bg: #f6f8fb;
-  --card: #ffffff;
-  --text: #101828;
-  --muted: #667085;
-  --line: #e4e7ec;
-  --navy: #0f172a;
-  --navy-2: #111b34;
-  --green: #12b76a;
-  --green-soft: #e8fff3;
-  --orange: #f79009;
-  --orange-soft: #fff6e8;
-  --blue: #2e90fa;
-  --blue-soft: #eef7ff;
-  --red: #f04438;
-  --red-soft: #fff0f0;
-  --gray-soft: #f2f4f7;
-}
-html, body, [data-testid="stAppViewContainer"] {background: var(--bg);}
-.block-container {padding-top: 1rem; padding-bottom: 2rem; max-width: 1220px;}
-h1, h2, h3 {letter-spacing: -0.02em; color: var(--text);} 
-.main-title {font-size: 2rem; font-weight: 900; color: #fff; margin: 0;}
-.hero {
-  background: linear-gradient(135deg, #0f172a 0%, #111b34 45%, #173a6a 100%);
-  color: #fff; border-radius: 24px; padding: 1.1rem 1.1rem 1rem 1.1rem;
-  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.18); border: 1px solid rgba(255,255,255,0.08);
-  margin-bottom: 1rem;
-}
-.hero-sub {opacity: 0.82; font-size: 0.95rem; margin-top: 0.2rem;}
-.toolbar {
-  background: rgba(255,255,255,0.09); border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 18px; padding: 0.55rem 0.8rem; margin-top: 0.9rem;
-}
-.section-title {font-size: 1.08rem; font-weight: 850; color: var(--text); margin-bottom: 0.45rem;}
-.muted {font-size: 0.92rem; color: var(--muted);}
-.badge {display:inline-block; padding: 0.34rem 0.72rem; border-radius: 999px; font-weight: 800; font-size: 0.80rem; margin-right: 0.35rem; margin-bottom: 0.35rem;}
-.b-green {background: var(--green-soft); color: #067647; border:1px solid #b7ebc5;}
-.b-red {background: var(--red-soft); color:#b42318; border:1px solid #f8c1bd;}
-.b-orange {background: var(--orange-soft); color:#b54708; border:1px solid #f7d6a8;}
-.b-blue {background: var(--blue-soft); color:#175cd3; border:1px solid #bfdbfe;}
-.b-gray {background: #f2f4f7; color:#344054; border:1px solid #d0d5dd;}
-.b-dark {background: rgba(255,255,255,0.08); color:#fff; border:1px solid rgba(255,255,255,0.16);}
-.overview-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem;margin:0.65rem 0 0.2rem 0;}
-.overview-box {
-  background: linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%); border:1px solid var(--line);
-  border-radius: 18px; padding: 0.9rem; box-shadow: 0 6px 20px rgba(16,24,40,0.04);
-}
-.overview-label {font-size:0.8rem; color:var(--muted); margin-bottom:0.15rem;}
-.overview-value {font-size:1.55rem; font-weight:900; color:var(--text); line-height:1.15;}
-.status-grid {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.65rem; margin:0.8rem 0 1rem 0;}
-.status-card {
-  background:#fff; border:1px solid var(--line); border-radius:18px; padding:0.75rem 0.7rem;
-  text-align:center; box-shadow:0 6px 18px rgba(16,24,40,0.03);
-}
-.status-name {font-size:0.78rem; color:var(--muted); margin-bottom:0.2rem;}
-.status-value {font-size:1.45rem; font-weight:900; color:var(--text);}
-.panel {
-  background:#fff; border:1px solid var(--line); border-radius:22px; padding:1rem; margin-bottom:1rem;
-  box-shadow:0 8px 24px rgba(16,24,40,0.04);
-}
-.card {
-  background:#fff; border:1px solid var(--line); border-radius:22px; padding:1rem; margin-bottom:0.9rem;
-  box-shadow:0 10px 22px rgba(16,24,40,0.05);
-}
-.card.ready {background: linear-gradient(180deg, #f6fff9 0%, #ffffff 100%); border-color:#b7ebc5;}
-.card.developing {background: linear-gradient(180deg, #fffaf1 0%, #ffffff 100%); border-color:#f6d39d;}
-.card.watch {background: linear-gradient(180deg, #f7fbff 0%, #ffffff 100%); border-color:#c7d7fe;}
-.card.no-trade {background: linear-gradient(180deg, #fcfcfd 0%, #ffffff 100%);}
-.symbol {font-size:1.55rem; font-weight:900; color:var(--text); line-height:1.1;}
-.card-sub {font-size:0.86rem; color:var(--muted);}
-.score-circle {
-  min-width:88px; height:88px; border-radius:50%; display:flex; align-items:center; justify-content:center;
-  background: radial-gradient(circle at 30% 30%, #ffffff 0%, #f4f7fb 60%, #eef2f7 100%);
-  border: 1px solid var(--line); box-shadow: inset 0 1px 0 rgba(255,255,255,0.7);
-  flex-direction:column;
-}
-.score-number {font-size:1.45rem; font-weight:900; color:var(--text); line-height:1;}
-.score-caption {font-size:0.7rem; color:var(--muted); margin-top:0.15rem;}
-.info-grid {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.55rem;margin-top:.75rem;}
-.info-box {background:#f8fafc;border:1px solid #eaecf0;border-radius:14px;padding:.7rem .75rem;}
-.info-title {font-size:.75rem;color:var(--muted);margin-bottom:.18rem;}
-.info-value {font-size:1rem;font-weight:800;color:var(--text);line-height:1.2;}
-.quality-bar {margin-top:0.75rem;}
-.hr-soft {height:1px;background:#eaecf0;border:none;margin:0.8rem 0;}
-[data-testid="stMetricValue"] {font-size: 1.4rem;}
-[data-testid="stTabs"] button {font-weight:800;}
-[data-testid="stExpander"] details {border:1px solid #e5e7eb; border-radius:15px; background:#fff; overflow:hidden;}
-[data-testid="stExpander"] details summary {background:#fcfcfd; border-bottom:1px solid #f2f4f7;}
-@media (max-width: 900px){
-  .status-grid {grid-template-columns:repeat(2,minmax(0,1fr));}
-  .info-grid {grid-template-columns:repeat(2,minmax(0,1fr));}
-}
+:root{--ink:#101828;--muted:#667085;--line:#e4e7ec;--panel:#fff;--bg:#f4f7fb;--green:#12b76a;--red:#f04438;--amber:#f79009;--blue:#2e90fa;--purple:#7f56d9}
+html,body,[data-testid='stAppViewContainer']{background:linear-gradient(180deg,#f2f5fa 0%,#f8fafc 100%)}
+.block-container{max-width:1220px;padding-top:.8rem;padding-bottom:2rem}
+h1,h2,h3{letter-spacing:-.025em}.muted{color:var(--muted);font-size:.9rem}
+.hero{position:relative;overflow:hidden;background:linear-gradient(135deg,#08111f 0%,#10213c 48%,#173f6e 100%);border:1px solid rgba(255,255,255,.1);border-radius:26px;padding:1.15rem 1.2rem;color:white;box-shadow:0 18px 38px rgba(15,23,42,.20);margin-bottom:.9rem}
+.hero:after{content:'';position:absolute;width:220px;height:220px;border-radius:50%;right:-70px;top:-90px;background:radial-gradient(circle,rgba(46,144,250,.38),rgba(46,144,250,0) 70%)}
+.hero-title{font-size:2rem;font-weight:950;letter-spacing:-.04em;position:relative;z-index:1}.hero-sub{opacity:.82;font-size:.92rem;position:relative;z-index:1}.hero-strip{margin-top:.8rem;display:flex;gap:.45rem;flex-wrap:wrap;position:relative;z-index:1}
+.pill{display:inline-block;border-radius:999px;padding:.34rem .66rem;font-size:.76rem;font-weight:850;border:1px solid transparent;margin-right:.25rem;margin-bottom:.25rem}.p-green{background:#e9fbf1;color:#067647;border-color:#b7ebc5}.p-red{background:#fff0ef;color:#b42318;border-color:#f8c1bd}.p-amber{background:#fff6e8;color:#b54708;border-color:#f6d39d}.p-blue{background:#edf6ff;color:#175cd3;border-color:#c7d7fe}.p-purple{background:#f3efff;color:#6941c6;border-color:#d9d0ff}.p-gray{background:#f2f4f7;color:#344054;border-color:#d0d5dd}.p-dark{background:rgba(255,255,255,.10);color:white;border-color:rgba(255,255,255,.16)}
+.section{font-size:1.05rem;font-weight:900;color:var(--ink);margin:.7rem 0 .15rem}.panel{background:white;border:1px solid var(--line);border-radius:22px;padding:.95rem;box-shadow:0 8px 24px rgba(16,24,40,.045);margin-bottom:.8rem}
+.regime-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.55rem}.mini{background:linear-gradient(180deg,#fff,#fafcff);border:1px solid #eaecf0;border-radius:16px;padding:.7rem}.mini-label{font-size:.72rem;color:var(--muted);margin-bottom:.15rem}.mini-value{font-weight:900;color:var(--ink);font-size:1.03rem}
+.status-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.55rem;margin:.55rem 0 .9rem}.status{border-radius:17px;padding:.7rem;text-align:center;border:1px solid var(--line);background:#fff}.status-name{font-size:.72rem;color:var(--muted);font-weight:800}.status-num{font-size:1.45rem;font-weight:950;color:var(--ink)}
+.arena-card{background:white;border:1px solid var(--line);border-radius:23px;padding:1rem;margin:.75rem 0;box-shadow:0 10px 24px rgba(16,24,40,.055)}.arena-ready{border-color:#a9e9c0;background:linear-gradient(180deg,#f5fff9,#fff 48%)}.arena-developing{border-color:#f5cf91;background:linear-gradient(180deg,#fff9ef,#fff 48%)}.arena-watch{border-color:#bad7ff;background:linear-gradient(180deg,#f5faff,#fff 48%)}
+.symbol-row{display:flex;justify-content:space-between;gap:1rem;align-items:center;flex-wrap:wrap}.symbol{font-size:1.55rem;font-weight:950;color:var(--ink)}.subtitle{font-size:.86rem;color:var(--muted);margin-top:.12rem}.power{min-width:94px;height:94px;border-radius:22px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:linear-gradient(145deg,#0f172a,#183b68);color:white;box-shadow:0 9px 20px rgba(15,23,42,.2)}.power-score{font-size:1.55rem;font-weight:950;line-height:1}.power-label{font-size:.68rem;opacity:.78;margin-top:.2rem}
+.quick-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.5rem;margin:.7rem 0}.quick{border:1px solid #eaecf0;background:#f8fafc;border-radius:14px;padding:.65rem}.q-label{font-size:.7rem;color:var(--muted)}.q-value{font-size:.94rem;font-weight:850;color:var(--ink);margin-top:.12rem;overflow-wrap:anywhere}
+.quest{margin-top:.65rem;border:1px solid #e7eaf0;border-radius:15px;background:#fbfcfe;padding:.65rem .72rem}.quest-title{font-size:.74rem;font-weight:900;color:#475467;margin-bottom:.35rem}.quest-items{display:flex;gap:.35rem;flex-wrap:wrap}.missing{margin-top:.6rem;background:#fff8ed;border:1px solid #f7d6a8;border-radius:14px;padding:.65rem}.missing-title{font-size:.74rem;font-weight:900;color:#b54708;margin-bottom:.2rem}.missing-text{font-size:.83rem;color:#7a2e0e}
+.leader{background:linear-gradient(135deg,#fff,#f7faff);border:1px solid #d6e4ff;border-radius:22px;padding:.9rem;margin-bottom:.75rem}.rank{display:inline-flex;width:28px;height:28px;border-radius:9px;background:#0f172a;color:#fff;align-items:center;justify-content:center;font-size:.77rem;font-weight:900;margin-right:.45rem}
+[data-testid='stTabs'] button{font-weight:850;font-size:.82rem}[data-testid='stExpander'] details{border:1px solid #e5e7eb;border-radius:15px;background:#fff;overflow:hidden}[data-testid='stExpander'] details summary{background:#fcfcfd}
+@media(max-width:850px){.regime-grid,.status-grid,.quick-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.hero-title{font-size:1.65rem}.power{min-width:80px;height:80px;border-radius:20px}.power-score{font-size:1.3rem}}
 </style>
 """, unsafe_allow_html=True)
 
 
+def esc(x): return html.escape(str(x))
 def stage_of(r):
-    if r.get("direction") == "ERROR":
-        return "ERROR"
-    if r.get("direction") in ("WAIT", None):
-        return "NO TRADE"
-    s=float(r.get("score",0))
-    if s>=settings.ready_score: return "READY"
-    if s>=settings.developing_score: return "DEVELOPING"
-    if s>=settings.watch_score: return "WATCH"
-    return "NO TRADE"
-
-
-def stage_class(stage: str) -> str:
-    return {
-        'READY': 'ready', 'DEVELOPING': 'developing', 'WATCH': 'watch',
-        'NO TRADE': 'no-trade', 'ERROR': 'no-trade'
-    }.get(stage, 'no-trade')
-
-
-def tone(stage_or_dir: str) -> str:
-    mapping = {
-        'READY':'green', 'DEVELOPING':'orange', 'WATCH':'blue', 'NO TRADE':'gray', 'ERROR':'red',
-        'LONG':'green', 'SHORT':'red', 'WAIT':'gray', 'RISK_ON':'green', 'RISK_OFF':'red', 'NEUTRAL':'gray'
-    }
-    return mapping.get(stage_or_dir, 'gray')
-
-
-def pill(text: str, tone_name: str='gray', dark=False) -> str:
-    cls = {'green':'b-green','red':'b-red','orange':'b-orange','blue':'b-blue','gray':'b-gray'}.get(tone_name, 'b-gray')
-    if dark:
-        cls = 'b-dark'
-    return f'<span class="badge {cls}">{text}</span>'
-
-
+    if r.get('direction')=='ERROR': return 'ERROR'
+    if r.get('direction') in ('WAIT',None): return 'NO TRADE'
+    s=float(r.get('score',0))
+    if s>=settings.ready_score:return 'READY'
+    if s>=settings.developing_score:return 'DEVELOPING'
+    if s>=settings.watch_score:return 'WATCH'
+    return 'NO TRADE'
+def cls_stage(s):return {'READY':'arena-ready','DEVELOPING':'arena-developing','WATCH':'arena-watch'}.get(s,'')
+def tone(x):return {'READY':'green','LONG':'green','RISK_ON':'green','DEVELOPING':'amber','WATCH':'blue','SHORT':'red','RISK_OFF':'red','ERROR':'red','ELITE':'purple','STRONG':'green','BUILDING':'amber','LOW':'gray','NO TRADE':'gray','WAIT':'gray','NEUTRAL':'gray'}.get(str(x).upper(),'gray')
+def pill(txt,t=None,dark=False):return f"<span class='pill {'p-dark' if dark else 'p-'+(t or tone(txt))}'>{esc(txt)}</span>"
 def fmt_price(x):
-    if not isinstance(x,(int,float)) or math.isnan(x):
-        return '-'
-    if x >= 1000: return f'{x:,.2f}'
-    if x >= 1: return f'{x:,.4f}'
+    if not isinstance(x,(int,float)) or math.isnan(x):return '-'
+    if x>=1000:return f'{x:,.2f}'
+    if x>=1:return f'{x:,.4f}'
     return f'{x:,.6f}'
+def readable(v): return str(v).replace('_',' ').title()
 
-
-def signal_label(score: float, direction: str, stage: str) -> str:
-    if stage == 'READY' and score >= 90:
-        return f'Strong {direction}'
-    if stage == 'READY':
-        return f'Active {direction}'
-    if stage == 'DEVELOPING':
-        return f'Building {direction}'
-    if stage == 'WATCH':
-        return f'Watch {direction}'
-    if direction == 'WAIT':
-        return 'Mixed / Wait'
-    return 'No clear edge'
-
-
-@st.cache_data(ttl=45, show_spinner=False)
+@st.cache_data(ttl=45,show_spinner=False)
 def scan_all_cached(_bucket:int):
     async def run():
-        try:
-            vix = await asyncio.to_thread(analyze_internal_vix)
-        except Exception as e:
-            vix = {"bias":"neutral","score":0,"source":"error","error":str(e)}
-
-        async def one(symbol, asset_type):
-            try:
-                return await asyncio.wait_for(
-                    analyze_symbol(symbol, asset_type, vix.get("bias","neutral")),
-                    timeout=40,
-                )
-            except asyncio.TimeoutError:
-                return {"symbol":symbol,"asset_type":asset_type,"direction":"ERROR","score":0,"error":"Data source timeout — skipped this scan"}
-            except Exception as e:
-                return {"symbol":symbol,"asset_type":asset_type,"direction":"ERROR","score":0,"error":str(e)}
-
-        jobs=[one(s,"crypto") for s in settings.crypto_symbols] + [one(s,"stock") for s in settings.stock_symbols]
-        rows=list(await asyncio.gather(*jobs))
-        return vix, rows, int(time.time())
+        try:vix=await asyncio.to_thread(analyze_internal_vix)
+        except Exception as e:vix={'bias':'neutral','score':0,'source':'error','error':str(e)}
+        async def one(symbol,asset_type):
+            try:return await asyncio.wait_for(analyze_symbol(symbol,asset_type,vix.get('bias','neutral')),timeout=40)
+            except asyncio.TimeoutError:return {'symbol':symbol,'asset_type':asset_type,'direction':'ERROR','score':0,'error':'Data source timeout'}
+            except Exception as e:return {'symbol':symbol,'asset_type':asset_type,'direction':'ERROR','score':0,'error':str(e)}
+        jobs=[one(s,'crypto') for s in settings.crypto_symbols]+[one(s,'stock') for s in settings.stock_symbols]
+        return vix,list(await asyncio.gather(*jobs)),int(time.time())
     return asyncio.run(run())
 
 
-def render_symbol_card(r):
-    stage = stage_of(r)
-    direction = r.get('direction', '-')
-    score = float(r.get('score', 0))
-    symbol = r.get('symbol', '-')
-    source = r.get('data_source', '-')
-    signal = signal_label(score, direction, stage)
-    stage_tone = tone(stage)
-    dir_tone = tone(direction)
-    asset_type = r.get('asset_type')
-    asset_name = 'Crypto' if asset_type == 'crypto' else 'Stock'
-    asset_icon = '₿' if asset_type == 'crypto' else '📈'
-    html = f"""
-    <div class='card {stage_class(stage)}'>
-      <div style='display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;'>
-        <div style='flex:1;min-width:220px;'>
-          <div class='symbol'>{asset_icon} {symbol}</div>
-          <div class='card-sub' style='margin-top:0.16rem;'>{signal}</div>
-          <div style='margin-top:0.5rem;'>
-            {pill(stage, stage_tone)} {pill(direction, dir_tone)} {pill(asset_name, 'gray')} {pill(source, 'gray')}
-          </div>
+def checklist_pills(r):
+    c=r.get('checklist',{})
+    keys=[('12H',c.get('12h_structure')),('4H',c.get('4h_structure')),('RSI 4H',c.get('rsi_div_4h')),('RSI 12H',c.get('rsi_div_12h')),('Fib',c.get('fib')),('1H',c.get('candles_1h'))]
+    out=[]
+    target='bullish' if r.get('long_score',0)>=r.get('short_score',0) else 'bearish'
+    for label,val in keys:
+        sv=str(val or 'none').lower()
+        ok=(target in sv) or (label=='Fib' and 'healthy' in sv)
+        out.append(pill(('✓ ' if ok else '• ')+label,'green' if ok else 'gray'))
+    return ''.join(out)
+
+
+def render_card(r,rank=None):
+    stage=stage_of(r); direction=r.get('direction','-'); score=float(r.get('score',0)); power=r.get('setup_power','LOW')
+    symbol=r.get('symbol','-'); asset='CRYPTO' if r.get('asset_type')=='crypto' else 'STOCK'; icon='₿' if asset=='CRYPTO' else '◆'
+    rank_html=f"<span class='rank'>{rank}</span>" if rank else ''
+    st.markdown(f"""
+    <div class='arena-card {cls_stage(stage)}'>
+      <div class='symbol-row'>
+        <div style='flex:1;min-width:220px'>
+          <div class='symbol'>{rank_html}{icon} {esc(symbol)}</div>
+          <div class='subtitle'>{esc(asset)} • {esc(r.get('data_source','-'))}</div>
+          <div style='margin-top:.45rem'>{pill(stage)}{pill(direction)}{pill(power)}{pill('Gap '+str(r.get('gap','-')),'gray')}</div>
         </div>
-        <div class='score-circle'>
-          <div class='score-number'>{score:.0f}</div>
-          <div class='score-caption'>score</div>
-        </div>
+        <div class='power'><div class='power-score'>{score:.0f}</div><div class='power-label'>SETUP POWER</div></div>
       </div>
-    </div>
-    """
-    st.markdown(html, unsafe_allow_html=True)
-
+    </div>""",unsafe_allow_html=True)
     if 'error' in r:
-        st.error(r['error'])
-        return
-
-    fib = r.get('fib',{}) or {}
-    pat = r.get('pattern',{}) or {}
-    info_html = f"""
-    <div class='info-grid'>
-      <div class='info-box'><div class='info-title'>Price</div><div class='info-value'>{fmt_price(r.get('price'))}</div></div>
-      <div class='info-box'><div class='info-title'>1H Candles</div><div class='info-value'>{str(r.get('one_hour_candles','-')).upper()}</div></div>
-      <div class='info-box'><div class='info-title'>Fib Zone</div><div class='info-value'>{fib.get('status','-')}</div></div>
-      <div class='info-box'><div class='info-title'>Pattern</div><div class='info-value'>{pat.get('pattern','-')}</div></div>
+        st.error(r['error']);return
+    fib=r.get('fib',{}) or {}; d4=r.get('rsi_divergence_4h',{}) or {}; d12=r.get('rsi_divergence_12h',{}) or {}; bos4=r.get('bos_4h',{}) or {}
+    st.markdown(f"""
+    <div class='quick-grid'>
+      <div class='quick'><div class='q-label'>Price</div><div class='q-value'>{fmt_price(r.get('price'))}</div></div>
+      <div class='quick'><div class='q-label'>Market State</div><div class='q-value'>{readable((r.get('market_regime_12h') or {}).get('regime','-'))}</div></div>
+      <div class='quick'><div class='q-label'>RSI Divergence</div><div class='q-value'>4H {readable(d4.get('type','none'))} • 12H {readable(d12.get('type','none'))}</div></div>
+      <div class='quick'><div class='q-label'>Fib 0.50–0.618</div><div class='q-value'>{readable(fib.get('status','-'))}</div></div>
     </div>
-    """
-    st.markdown(info_html, unsafe_allow_html=True)
-    st.progress(min(max(score/100.0,0.0),1.0), text=f"Long {r.get('long_score','-')} • Short {r.get('short_score','-')} • Confidence gap {r.get('gap','-')}")
+    <div class='quest'><div class='quest-title'>MISSION CHECKLIST</div><div class='quest-items'>{checklist_pills(r)}</div></div>
+    """,unsafe_allow_html=True)
+    missing=r.get('missing_confirmations',[])
+    if missing:
+        st.markdown(f"<div class='missing'><div class='missing-title'>NEXT MISSION — what is still missing</div><div class='missing-text'>{esc(' • '.join(missing))}</div></div>",unsafe_allow_html=True)
+    st.progress(min(max(score/100,0),1),text=f"LONG {r.get('long_score','-')}  •  SHORT {r.get('short_score','-')}  •  1H candles: {str(r.get('one_hour_candles','-')).upper()}")
+    with st.expander('Open tactical details'):
+        a,b=st.columns(2)
+        with a:
+            st.markdown('**Structure & momentum**')
+            st.write('12H regime:',r.get('market_regime_12h'))
+            st.write('4H regime:',r.get('market_regime_4h'))
+            st.write('12H BOS/CHoCH:',r.get('bos_12h'))
+            st.write('4H BOS/CHoCH:',r.get('bos_4h'))
+            st.write('RSI divergence 12H:',d12)
+            st.write('RSI divergence 4H:',d4)
+            st.write('Divergence sync:',r.get('divergence_sync'))
+        with b:
+            st.markdown('**Setup mechanics**')
+            st.write('Fib:',fib)
+            st.write('Liquidity:',r.get('liquidity_sweep'))
+            st.write('Pattern:',r.get('pattern'))
+            st.write('Wyckoff:',r.get('wyckoff'))
+            st.write('Support / resistance:',r.get('support_resistance'))
+            st.write('4H volume ratio:',r.get('volume_ratio_4h'))
+        st.markdown('**Why the score**')
+        for reason in r.get('reasons',[]):st.write('•',reason)
+        st.markdown('**Data sources**')
+        for tf,src in (r.get('sources') or {}).items():st.write(f'{tf}: {src}')
 
-    with st.expander('More details'):
-        left, right = st.columns(2)
-        sw = r.get('liquidity_sweep',{}) or {}
-        sr = r.get('support_resistance',{}) or {}
-        with left:
-            st.markdown('**Setup summary**')
-            st.write(f"Fib: {fib.get('status','-')} ({fib.get('direction','-')})")
-            st.write(f"Liquidity sweep: {sw.get('type','-')} | strength {sw.get('strength','-')}")
-            st.write(f"Pattern: {pat.get('pattern','-')} | confidence {pat.get('confidence','-')}")
-            st.write(f"Wyckoff heuristic: {r.get('wyckoff','-')}")
-            st.write(f"4H volume ratio: {r.get('volume_ratio_4h','-')}")
-        with right:
-            st.markdown('**Support / resistance**')
-            sup = sr.get('support') or {}
-            res = sr.get('resistance') or {}
-            st.write(f"Support: {sup.get('price','-')} | touches {sup.get('touches','-')}")
-            st.write(f"Resistance: {res.get('price','-')} | touches {res.get('touches','-')}")
-            sources = r.get('sources', {})
-            if sources:
-                st.markdown('**Data sources**')
-                for tf in ['1h','4h','12h','1d']:
-                    st.write(f"{tf}: {sources.get(tf,'-')}")
-        st.markdown('**Why this score**')
-        for x in r.get('reasons',[]):
-            st.write('•', x)
-
-
-# HERO
+# Hero
 st.markdown("""
 <div class='hero'>
-  <div class='main-title'>Hadar Live Trading Bot</div>
-  <div class='hero-sub'>Premium layout • cleaner decision flow • VIX-aware market regime • crypto + stocks dashboard</div>
-  <div class='toolbar'>Focus on the strongest opportunities first. Deep details stay hidden until you open them.</div>
+ <div class='hero-title'>⚡ Hadar Alpha Arena</div>
+ <div class='hero-sub'>Live decision engine • Game Premium UI • 12H / 4H core • 1H candles only • no 15m</div>
+ <div class='hero-strip'><span class='pill p-dark'>VIX Regime</span><span class='pill p-dark'>RSI Divergence 4H + 12H</span><span class='pill p-dark'>BOS / CHoCH</span><span class='pill p-dark'>Smart Fib</span><span class='pill p-dark'>Liquidity</span></div>
 </div>
-""", unsafe_allow_html=True)
+""",unsafe_allow_html=True)
 
-controls_l, controls_m, controls_r = st.columns([1.2, 1.4, 1])
-with controls_l:
-    mode = st.selectbox('Market', ['All', 'Crypto only', 'Stocks only'], index=0)
-with controls_m:
-    sort_mode = st.selectbox('Sort', ['Highest score', 'Direction then score', 'Alphabetical'], index=0)
-with controls_r:
-    if st.button('🔄 Scan now', use_container_width=True):
-        st.cache_data.clear()
+c1,c2,c3=st.columns([1.25,1.35,1])
+with c1:mode=st.selectbox('Arena',['All','Crypto only','Stocks only'])
+with c2:sort_mode=st.selectbox('Priority',['Highest Setup Power','LONG first','SHORT first','Alphabetical'])
+with c3:
+    st.write('')
+    if st.button('⚡ RUN SCAN',use_container_width=True):st.cache_data.clear()
 
 bucket=int(time.time()//60)
-with st.spinner('Scanning market data…'):
-    vix, rows, ts = scan_all_cached(bucket)
+with st.spinner('Reading market structure and building setup scores…'):
+    vix,rows,ts=scan_all_cached(bucket)
+if mode=='Crypto only':rows=[r for r in rows if r.get('asset_type')=='crypto']
+elif mode=='Stocks only':rows=[r for r in rows if r.get('asset_type')=='stock']
 
-if mode == 'Crypto only':
-    rows = [r for r in rows if r.get('asset_type') == 'crypto']
-elif mode == 'Stocks only':
-    rows = [r for r in rows if r.get('asset_type') == 'stock']
+ready=[r for r in rows if stage_of(r)=='READY'];develop=[r for r in rows if stage_of(r)=='DEVELOPING'];watch=[r for r in rows if stage_of(r)=='WATCH'];wait=[r for r in rows if stage_of(r)=='NO TRADE'];errors=[r for r in rows if stage_of(r)=='ERROR'];valid=[r for r in rows if stage_of(r)!='ERROR']
 
-# categorization
-ready=[r for r in rows if stage_of(r)=='READY']
-develop=[r for r in rows if stage_of(r)=='DEVELOPING']
-watch=[r for r in rows if stage_of(r)=='WATCH']
-no_trade=[r for r in rows if stage_of(r)=='NO TRADE']
-errors=[r for r in rows if stage_of(r)=='ERROR']
-valid=[r for r in rows if stage_of(r)!='ERROR']
+def ordered(xs):
+    if sort_mode=='Alphabetical':return sorted(xs,key=lambda r:r.get('symbol',''))
+    if sort_mode=='LONG first':return sorted(xs,key=lambda r:(r.get('direction')!='LONG',-float(r.get('score',0))))
+    if sort_mode=='SHORT first':return sorted(xs,key=lambda r:(r.get('direction')!='SHORT',-float(r.get('score',0))))
+    return sorted(xs,key=lambda r:float(r.get('score',0)),reverse=True)
 
-def sort_rows(grp):
-    if sort_mode == 'Alphabetical':
-        return sorted(grp, key=lambda x: x.get('symbol',''))
-    if sort_mode == 'Direction then score':
-        return sorted(grp, key=lambda x: (x.get('direction',''), -float(x.get('score',0))))
-    return sorted(grp, key=lambda x: float(x.get('score',0)), reverse=True)
+# Command center
+st.markdown("<div class='section'>🎮 Command Center</div>",unsafe_allow_html=True)
+bias=str(vix.get('bias','neutral')).upper()
+leader=ordered(valid)[0] if valid else None
+st.markdown(f"""
+<div class='panel'>
+ <div class='regime-grid'>
+   <div class='mini'><div class='mini-label'>VIX REGIME</div><div class='mini-value'>{esc(bias)}</div></div>
+   <div class='mini'><div class='mini-label'>VIX SCORE</div><div class='mini-value'>{esc(vix.get('score',0))}</div></div>
+   <div class='mini'><div class='mini-label'>TOP TARGET</div><div class='mini-value'>{esc(leader.get('symbol','-') if leader else '-')}</div></div>
+   <div class='mini'><div class='mini-label'>TOP POWER</div><div class='mini-value'>{esc(leader.get('setup_power','-') if leader else '-')}</div></div>
+ </div>
+ <div style='margin-top:.55rem'>{pill('VIX '+bias)}{pill('VIX '+str(vix.get('vix','-')),'gray')}{pill('VIX9D/VIX '+str(vix.get('vix9d_ratio','-')),'gray')}{pill('4H div '+str(vix.get('div4h','-')),'gray')}{pill('12H div '+str(vix.get('div12h','-')),'gray')}</div>
+</div>
+<div class='status-grid'>
+ <div class='status'><div class='status-name'>🟢 READY</div><div class='status-num'>{len(ready)}</div></div>
+ <div class='status'><div class='status-name'>🟠 DEVELOPING</div><div class='status-num'>{len(develop)}</div></div>
+ <div class='status'><div class='status-name'>🔵 WATCH</div><div class='status-num'>{len(watch)}</div></div>
+ <div class='status'><div class='status-name'>⚪ WAIT</div><div class='status-num'>{len(wait)}</div></div>
+</div>
+""",unsafe_allow_html=True)
+if errors:st.warning(f'⚠️ {len(errors)} data errors are separated from trade decisions.')
 
-# overview
-bias = str(vix.get('bias','neutral')).upper()
-st.markdown("<div class='section-title'>Overview</div>", unsafe_allow_html=True)
-left, right = st.columns([1.45, 1])
-with left:
-    st.markdown(
-        f"""
-        <div class='panel'>
-          <div style='display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;'>
-            <div>
-              <div class='section-title' style='margin-bottom:.35rem'>Market regime</div>
-              <div>{pill('VIX ' + bias, tone(bias))} {pill('Score ' + str(vix.get('score',0)), 'blue')} {pill('VIX ' + str(vix.get('vix','-')), 'gray')} {pill('VIX9D/VIX ' + str(vix.get('vix9d_ratio','-')), 'gray')}</div>
-              <div class='muted' style='margin-top:.55rem'>Source: {vix.get('source','-')} • 4H divergence: {vix.get('div4h','-')} • 12H divergence: {vix.get('div12h','-')}</div>
-            </div>
-            <div class='overview-grid' style='min-width:250px;flex:1;'>
-              <div class='overview-box'><div class='overview-label'>Top stage</div><div class='overview-value'>{'READY' if ready else 'DEVELOPING' if develop else 'WATCH' if watch else 'WAIT'}</div></div>
-              <div class='overview-box'><div class='overview-label'>Valid symbols</div><div class='overview-value'>{len(valid)}</div></div>
-            </div>
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-with right:
-    st.markdown(
-        f"""
-        <div class='status-grid'>
-          <div class='status-card'><div class='status-name'>🟢 READY</div><div class='status-value'>{len(ready)}</div></div>
-          <div class='status-card'><div class='status-name'>🟠 DEVELOPING</div><div class='status-value'>{len(develop)}</div></div>
-          <div class='status-card'><div class='status-name'>🔵 WATCH</div><div class='status-value'>{len(watch)}</div></div>
-          <div class='status-card'><div class='status-name'>⚪ NO TRADE</div><div class='status-value'>{len(no_trade)}</div></div>
-        </div>
-        """, unsafe_allow_html=True
-    )
-    if errors:
-        st.warning(f'{len(errors)} symbols have a data-source error and are separated from trade signals.')
+# Leaderboard
+st.markdown("<div class='section'>🏆 Alpha Leaderboard</div><div class='muted'>The 3 closest setups right now. They can appear here before they reach READY.</div>",unsafe_allow_html=True)
+for idx,r in enumerate(ordered(valid)[:3],1):render_card(r,idx)
+if not valid:st.info('No valid market data yet.')
 
-# top opportunities
-st.markdown("<div class='section-title'>Top opportunities</div><div class='muted'>The strongest symbols right now, even if they are not fully READY yet.</div>", unsafe_allow_html=True)
-top = sort_rows(valid)[:3]
-if top:
-    for r in top:
-        render_symbol_card(r)
-else:
-    st.info('No valid market data yet.')
-
-# full scan
-st.markdown("<div class='section-title'>Full market scan</div><div class='muted'>Use the tabs to keep the view clean. Data errors are separated from NO TRADE.</div>", unsafe_allow_html=True)
-labels = [
-    f'🟢 READY {len(ready)}',
-    f'🟠 DEVELOPING {len(develop)}',
-    f'🔵 WATCH {len(watch)}',
-    f'⚪ WAIT {len(no_trade)}',
-    f'⚠️ ERR {len(errors)}'
-]
-tabs = st.tabs(labels)
-for tab, grp in zip(tabs, [ready, develop, watch, no_trade, errors]):
+# Full arena
+st.markdown("<div class='section'>🗺️ Full Arena</div><div class='muted'>Open only the stage you want. Deep tactical data stays hidden by default.</div>",unsafe_allow_html=True)
+tabs=st.tabs([f'🟢 READY {len(ready)}',f'🟠 DEV {len(develop)}',f'🔵 WATCH {len(watch)}',f'⚪ WAIT {len(wait)}',f'⚠️ ERR {len(errors)}'])
+for tab,grp in zip(tabs,[ready,develop,watch,wait,errors]):
     with tab:
-        ordered = sort_rows(grp)
-        if not ordered:
-            st.info('Nothing here right now.')
-        for r in ordered:
-            render_symbol_card(r)
+        if not grp:st.info('Nothing here right now.')
+        for r in ordered(grp):render_card(r)
 
-st.caption('Crypto data fallback order: Binance Vision → alternate Binance endpoints → Yahoo. For 24/7 alerts, keep the background alert worker separate from Streamlit.')
+st.caption('Game Premium v3 • Analysis + alerts decision engine. Scores are analytical signals, not guarantees. Crypto fallback: Binance Vision → alternate Binance endpoints → Yahoo.')

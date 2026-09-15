@@ -138,3 +138,29 @@ def wyckoff_heuristic(df: pd.DataFrame):
     if st=='bullish' and pos>.55: return 'markup'
     if st=='bearish' and pos<.45: return 'markdown'
     return 'neutral'
+
+
+def rsi_divergence_detail(df: pd.DataFrame, period=14):
+    """Return RSI divergence plus pivot values for UI/scoring."""
+    rr=rsi(df.close, period)
+    lows=pivots(df.low,4,4,'low'); highs=pivots(df.high,4,4,'high')
+    candidates=[]
+    if len(lows)>=2:
+        a,b=lows[-2],lows[-1]
+        if pd.notna(rr.iloc[a]) and pd.notna(rr.iloc[b]):
+            price_change=(float(df.low.iloc[b])-float(df.low.iloc[a]))/max(abs(float(df.low.iloc[a])),1e-9)
+            rsi_change=float(rr.iloc[b]-rr.iloc[a])
+            if price_change<0 and rsi_change>0:
+                strength=min(1.0,.45+min(abs(price_change)*8,.25)+min(rsi_change/30,.3))
+                candidates.append((b,{'type':'bullish','strength':round(strength,2),'price_a':float(df.low.iloc[a]),'price_b':float(df.low.iloc[b]),'rsi_a':round(float(rr.iloc[a]),1),'rsi_b':round(float(rr.iloc[b]),1)}))
+    if len(highs)>=2:
+        a,b=highs[-2],highs[-1]
+        if pd.notna(rr.iloc[a]) and pd.notna(rr.iloc[b]):
+            price_change=(float(df.high.iloc[b])-float(df.high.iloc[a]))/max(abs(float(df.high.iloc[a])),1e-9)
+            rsi_change=float(rr.iloc[b]-rr.iloc[a])
+            if price_change>0 and rsi_change<0:
+                strength=min(1.0,.45+min(abs(price_change)*8,.25)+min(abs(rsi_change)/30,.3))
+                candidates.append((b,{'type':'bearish','strength':round(strength,2),'price_a':float(df.high.iloc[a]),'price_b':float(df.high.iloc[b]),'rsi_a':round(float(rr.iloc[a]),1),'rsi_b':round(float(rr.iloc[b]),1)}))
+    if not candidates:
+        return {'type':'none','strength':0.0}
+    return max(candidates,key=lambda z:z[0])[1]
