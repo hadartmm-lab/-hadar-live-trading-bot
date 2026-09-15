@@ -1,23 +1,20 @@
-Hadar Live Trading Bot v2.3 Resilient UI
+Hadar Live Trading Bot v2.5 Premium Layout
 
 What changed
-- Friendlier, lighter Streamlit dashboard with color badges, tabs, and cleaner cards.
-- Crypto data is now more resilient:
-  1) data-api.binance.vision
-  2) api1.binance.com
-  3) api2.binance.com
-  4) api3.binance.com
-  5) api.binance.com
-  6) Yahoo fallback (ex: BTCUSDT -> BTC-USD)
-- Each symbol now shows the data source used.
-- The page should be easier to read on mobile and less overloaded.
+- More premium visual design.
+- Better section hierarchy and cleaner layout.
+- Dedicated Overview section.
+- Better Top Opportunities section.
+- Cleaner tabs for full scan.
+- Friendlier badges and cards.
+- Keeps the resilient crypto fallback from v2.3/v2.4.
 
-How to update GitHub
-Upload/replace at least these files:
+Upload / replace in GitHub
 - app.py
+
+If needed, also keep these latest versions from previous fixes:
 - datafeeds.py
 - engine.py
-- README_DEPLOY.md (optional)
 
 Then in Streamlit:
 - Manage app -> Reboot app
