@@ -1,4 +1,4 @@
-# Hadar Live Trading Bot v3.4 RSI + Smart 12H Fib
+# Hadar Live Trading Bot v3.5 Closed-Candle Precision
 
 
 Multi-asset swing-trading decision engine. Core analysis is Daily / 12H / 4H, with 1H candle direction as a light confirmation layer. No 15-minute layer.
@@ -31,3 +31,18 @@ This is an analytical decision-support tool, not a guarantee of future performan
 - Main pullback approval zone: 0.50–0.618.
 - The engine exposes impulse quality, ATR multiple, retracement depth, and distance from the Fib zone.
 - Fib remains a confirmation layer and cannot by itself create a READY trade.
+
+
+## v3.5 Closed-Candle + Honest Backtest
+- **No look-ahead:** the backtest evaluates a 12H signal only after that 12H candle has fully closed.
+- Every 4H / 1H / Daily input used at that moment must also be fully closed.
+- Historical entry is the **open of the next 12H candle**, never the close that produced the signal.
+- Threshold tests (55 / 68 / 78 / 90) allow only one open trade at a time, independently per threshold.
+- Added Profit Factor, Max Drawdown and compounded cumulative return to the calibration report.
+- The live engine now strips the currently-forming candle before scoring, matching the wait-for-close trading rule.
+- `run_backtest.py` downloads one canonical BTCUSDT 1H stream and derives 4H / 12H / 1D from the same data, reducing timestamp/feed drift.
+- Default calibration window is 730 days with a 48-hour holding horizon (`--horizon 4`).
+
+Run: `python run_backtest.py --symbol BTCUSDT --days 730 --horizon 4`
+
+Important: the calibration report is still not a brokerage fill simulator. It does not assume leverage, intrabar stop fills, fees or slippage unless separately modeled.

@@ -18,6 +18,7 @@ Keep the latest logic files already uploaded from v3:
 - indicators.py
 - advanced_patterns.py
 - backtest.py
+- run_backtest.py
 - datafeeds.py
 
 Then in Streamlit:

@@ -307,7 +307,7 @@ def render_card(r, rank=None):
 st.markdown("""
 <div class='hero'>
   <div class='hero-title'>⚡ Hadar Alpha Arena</div>
-  <div class='hero-sub'>v3.4 Precision Fib UI • clear BIAS vs ACTION • 100-point score • 12H / 4H core • 1H confirmation • stricter READY gates</div>
+  <div class='hero-sub'>v3.5 Closed-Candle Precision • clear BIAS vs ACTION • 100-point score • 12H / 4H core • 1H confirmation • stricter READY gates</div>
   <div class='hero-strip'>
     <span class='pill p-dark'>VIX Regime</span>
     <span class='pill p-dark'>RSI Divergence 4H + 12H</span>
@@ -422,4 +422,4 @@ for tab, grp in zip(tabs, [ready, develop, watch, wait, errors]):
         for r in ordered(grp):
             render_card(r)
 
-st.caption('Game Premium v3.4 Precision Fib • BIAS is separate from ACTION • 100-point transparent scoring • READY requires structure + trigger gates. Scores are analytical signals, not guarantees. Crypto fallback: Binance Vision → alternate Binance endpoints → Yahoo.')
+st.caption('Game Premium v3.5 Closed-Candle Precision • BIAS is separate from ACTION • 100-point transparent scoring • READY requires structure + trigger gates. Scores are analytical signals, not guarantees. Crypto fallback: Binance Vision → alternate Binance endpoints → Yahoo.')

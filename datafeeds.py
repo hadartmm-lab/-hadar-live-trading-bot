@@ -13,6 +13,33 @@ BINANCE_ENDPOINTS = [
 _HEADERS = {'User-Agent': 'Mozilla/5.0 HadarBot/2.3'}
 
 
+_INTERVAL_DELTA = {
+    '1h': pd.Timedelta(hours=1),
+    '4h': pd.Timedelta(hours=4),
+    '12h': pd.Timedelta(hours=12),
+    '1d': pd.Timedelta(days=1),
+}
+
+
+def closed_bars_only(df: pd.DataFrame, interval: str, now=None) -> pd.DataFrame:
+    """Remove the currently-forming candle.
+
+    Project timestamps are candle OPEN times. Core strategy calculations must use
+    only fully closed candles, matching the user's wait-for-close rule and the
+    strict backtest implementation.
+    """
+    if df is None or df.empty or interval not in _INTERVAL_DELTA:
+        return df.reset_index(drop=True) if df is not None else df
+    now = pd.Timestamp.now(tz='UTC') if now is None else pd.Timestamp(now)
+    if now.tzinfo is None:
+        now = now.tz_localize('UTC')
+    else:
+        now = now.tz_convert('UTC')
+    opens = pd.to_datetime(df['ts'], utc=True)
+    closes = opens + _INTERVAL_DELTA[interval]
+    return df.loc[closes <= now].copy().reset_index(drop=True)
+
+
 def _normalize_binance(rows):
     cols=['ts','open','high','low','close','volume','close_ts','qv','trades','tb','tq','ignore']
     df=pd.DataFrame(rows,columns=cols)
@@ -106,7 +133,11 @@ async def stock_klines(symbol:str, interval='1h', period='60d'):
 
 
 async def market_df(symbol:str, interval:str, asset_type:str):
-    return await (crypto_klines(symbol, interval) if asset_type=='crypto' else stock_klines(symbol, interval))
+    df, src = await (crypto_klines(symbol, interval) if asset_type=='crypto' else stock_klines(symbol, interval))
+    df = closed_bars_only(df, interval)
+    if df is None or df.empty:
+        raise RuntimeError(f'No fully closed {interval} candles for {symbol} from {src}')
+    return df, src
 
 
 async def binance_history(symbol:str, interval:str, days:int=365):
