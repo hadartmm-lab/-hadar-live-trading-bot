@@ -56,6 +56,8 @@ def esc(x):
 def stage_of(r):
     if r.get('direction') == 'ERROR':
         return 'ERROR'
+    if r.get('stage'):
+        return str(r.get('stage')).upper()
     if r.get('direction') in ('WAIT', None):
         return 'NO TRADE'
     s = float(r.get('score', 0))
@@ -107,7 +109,7 @@ def power_class(power: str) -> str:
 
 def verdict_text(r) -> str:
     stage = stage_of(r)
-    direction = str(r.get('direction','WAIT')).upper()
+    direction = str(r.get('bias') or r.get('direction','WAIT')).upper()
     score = float(r.get('score',0))
     if stage == 'READY':
         return f'{direction} READY — setup is active now'
@@ -151,7 +153,7 @@ def target_side(r) -> str:
 
 
 def edge_summary(r) -> str:
-    direction = str(r.get('direction','WAIT')).upper()
+    direction = str(r.get('bias') or r.get('direction','WAIT')).upper()
     gap = float(r.get('gap',0))
     score = float(r.get('score',0))
     if direction == 'WAIT':
@@ -177,6 +179,8 @@ def checklist_pills(r):
         ('4H Trend', c.get('4h_structure')),
         ('RSI 4H', c.get('rsi_div_4h')),
         ('RSI 12H', c.get('rsi_div_12h')),
+        ('Momentum 4H', c.get('rsi_momentum_4h')),
+        ('Momentum 12H', c.get('rsi_momentum_12h')),
         ('Fib', c.get('fib')),
         ('1H', c.get('candles_1h')),
     ]
@@ -213,6 +217,8 @@ def scan_all_cached(_bucket:int):
 def render_card(r, rank=None):
     stage = stage_of(r)
     direction = r.get('direction','-')
+    bias = r.get('bias') or (direction if direction in ('LONG','SHORT') else 'NEUTRAL')
+    confidence = r.get('confidence','LOW')
     score = float(r.get('score',0))
     power = r.get('setup_power','LOW')
     symbol = r.get('symbol','-')
@@ -228,7 +234,7 @@ def render_card(r, rank=None):
           <div class='symbol'>{rank_html}{icon} {esc(symbol)}</div>
           <div class='subtitle'>{esc(asset)}</div>
           <div class='verdict'>{esc(verdict)}</div>
-          <div style='margin-top:.45rem'>{pill(stage)}{pill(direction)}{pill(power)}</div>
+          <div style='margin-top:.45rem'>{pill(stage)}{pill('BIAS ' + str(bias))}{pill('CONF ' + str(confidence))}</div>
         </div>
         <div class='power {power_class(power)}'>
           <div class='power-score'>{score:.0f}</div>
@@ -245,10 +251,14 @@ def render_card(r, rank=None):
     market_state = readable((r.get('market_regime_12h') or {}).get('regime','-'))
     st.markdown(f"""
     <div class='summary-grid'>
+      <div class='summary'><div class='s-label'>Bias</div><div class='s-value'>{esc(bias)}</div></div>
+      <div class='summary'><div class='s-label'>Action</div><div class='s-value'>{esc(stage)}</div></div>
       <div class='summary'><div class='s-label'>Price</div><div class='s-value'>{fmt_price(r.get('price'))}</div></div>
+      <div class='summary'><div class='s-label'>Confidence</div><div class='s-value'>{esc(confidence)}</div></div>
       <div class='summary'><div class='s-label'>Market State</div><div class='s-value'>{esc(market_state)}</div></div>
       <div class='summary'><div class='s-label'>RSI Divergence</div><div class='s-value'>{esc(rsi_summary(r))}</div></div>
       <div class='summary'><div class='s-label'>Fib 0.50–0.618</div><div class='s-value'>{esc(fib_summary(r))}</div></div>
+      <div class='summary'><div class='s-label'>Triggers</div><div class='s-value'>{esc(r.get('trigger_count',0))}/5</div></div>
     </div>
     <div class='quest'>
       <div class='quest-title'>CONFIRMED CHECKLIST</div>
@@ -264,7 +274,7 @@ def render_card(r, rank=None):
     if missing:
         st.markdown(f"<div class='missing'><div class='missing-title'>NEXT MISSION — what is still missing</div><div class='missing-text'>{esc(missing_summary(r))}</div></div>", unsafe_allow_html=True)
 
-    st.progress(min(max(score/100,0),1), text=f"Long {r.get('long_score','-')}  •  Short {r.get('short_score','-')}  •  1H candles: {str(r.get('one_hour_candles','-')).upper()}")
+    st.progress(min(max(score/100,0),1), text=f"LONG {r.get('long_score','-')}  •  SHORT {r.get('short_score','-')}  •  GAP {r.get('gap','-')}  •  1H {str(r.get('one_hour_candles','-')).upper()}")
 
     with st.expander('Open tactical details'):
         a, b = st.columns(2)
@@ -297,7 +307,7 @@ def render_card(r, rank=None):
 st.markdown("""
 <div class='hero'>
   <div class='hero-title'>⚡ Hadar Alpha Arena</div>
-  <div class='hero-sub'>Game Premium decision engine • cleaner layout • 12H / 4H core • 1H candles only • no 15m • clearer verdicts and missing confirmations</div>
+  <div class='hero-sub'>v3.4 Precision Fib UI • clear BIAS vs ACTION • 100-point score • 12H / 4H core • 1H confirmation • stricter READY gates</div>
   <div class='hero-strip'>
     <span class='pill p-dark'>VIX Regime</span>
     <span class='pill p-dark'>RSI Divergence 4H + 12H</span>
@@ -349,8 +359,8 @@ def ordered(xs):
 st.markdown("<div class='section'>🎮 Command Center</div><div class='subsection'>Main market picture first. Then the closest target. Then the full arena.</div>", unsafe_allow_html=True)
 bias = str(vix.get('bias','neutral')).upper()
 leader = ordered(valid)[0] if valid else None
-leader_dir = leader.get('direction','-') if leader else '-'
-leader_power = leader.get('setup_power','-') if leader else '-'
+leader_dir = (leader.get('bias') or leader.get('direction','-')) if leader else '-'
+leader_power = leader.get('confidence','-') if leader else '-'
 leader_score = float(leader.get('score',0)) if leader else 0
 leader_symbol = leader.get('symbol','-') if leader else '-'
 leader_verdict = verdict_text(leader) if leader else 'No target yet'
@@ -372,7 +382,7 @@ st.markdown(f"""
       <div class='top-title'>Top Target Right Now</div>
       <div class='top-symbol'>{esc(leader_symbol)}</div>
       <div class='top-sub'>{esc(leader_verdict)}</div>
-      <div style='margin-top:.45rem'>{pill(leader_dir, dark=True)} {pill(leader_power, dark=True)}</div>
+      <div style='margin-top:.45rem'>{pill('BIAS ' + str(leader_dir), dark=True)} {pill('CONF ' + str(leader_power), dark=True)}</div>
     </div>
     <div class='top-score'>
       <div class='top-score-num'>{leader_score:.0f}</div>
@@ -396,7 +406,7 @@ if errors:
     st.warning(f'⚠️ {len(errors)} data errors are separated from trade decisions.')
 
 # Leaderboard
-st.markdown("<div class='section'>🏆 Alpha Leaderboard</div><div class='subsection'>These are the 3 closest setups right now. They can appear here before they become READY.</div>", unsafe_allow_html=True)
+st.markdown("<div class='section'>🏆 Alpha Leaderboard</div><div class='subsection'>Top 3 by setup score. BIAS shows direction even before an entry is READY.</div>", unsafe_allow_html=True)
 for idx, r in enumerate(ordered(valid)[:3], 1):
     render_card(r, idx)
 if not valid:
@@ -412,4 +422,4 @@ for tab, grp in zip(tabs, [ready, develop, watch, wait, errors]):
         for r in ordered(grp):
             render_card(r)
 
-st.caption('Game Premium v3.1 • Cleaner verdicts, simplified cards, clearer missing confirmations. Scores are analytical signals, not guarantees. Crypto fallback: Binance Vision → alternate Binance endpoints → Yahoo.')
+st.caption('Game Premium v3.4 Precision Fib • BIAS is separate from ACTION • 100-point transparent scoring • READY requires structure + trigger gates. Scores are analytical signals, not guarantees. Crypto fallback: Binance Vision → alternate Binance endpoints → Yahoo.')

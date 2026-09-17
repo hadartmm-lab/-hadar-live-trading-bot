@@ -164,3 +164,46 @@ def rsi_divergence_detail(df: pd.DataFrame, period=14):
     if not candidates:
         return {'type':'none','strength':0.0}
     return max(candidates,key=lambda z:z[0])[1]
+
+
+def stoch_rsi_signal(df: pd.DataFrame, rsi_period=14, stoch_period=14, k_period=3, d_period=3):
+    """Directional confirmation from the user's second RSI layer.
+
+    Uses regular RSI(14) direction plus Stoch RSI (3,3,14,14). A bullish
+    confirmation is strongest when K crosses above D from/through the
+    oversold band; bearish is strongest when K crosses below D from/through
+    the overbought band. This is intended for 4H/12H/Daily only.
+    """
+    rr = rsi(df.close, rsi_period)
+    lo = rr.rolling(stoch_period).min()
+    hi = rr.rolling(stoch_period).max()
+    raw = 100 * (rr - lo) / (hi - lo).replace(0, np.nan)
+    k = raw.rolling(k_period).mean()
+    d = k.rolling(d_period).mean()
+    if len(df) < max(rsi_period + stoch_period + k_period + d_period, 35):
+        return {'direction':'neutral','strength':0.0,'rsi_direction':'flat','cross':'none','band':'mid'}
+    r_now=float(rr.iloc[-1]) if pd.notna(rr.iloc[-1]) else 50.0
+    r_prev=float(rr.iloc[-4]) if pd.notna(rr.iloc[-4]) else r_now
+    rsi_dir='up' if r_now > r_prev + 0.5 else 'down' if r_now < r_prev - 0.5 else 'flat'
+    k0=float(k.iloc[-2]) if pd.notna(k.iloc[-2]) else 50.0
+    d0=float(d.iloc[-2]) if pd.notna(d.iloc[-2]) else 50.0
+    k1=float(k.iloc[-1]) if pd.notna(k.iloc[-1]) else 50.0
+    d1=float(d.iloc[-1]) if pd.notna(d.iloc[-1]) else 50.0
+    golden = k0 <= d0 and k1 > d1
+    death = k0 >= d0 and k1 < d1
+    band='oversold' if max(k0,d0,k1,d1) <= 30 or min(k0,d0,k1,d1) <= 20 else 'overbought' if min(k0,d0,k1,d1) >= 70 or max(k0,d0,k1,d1) >= 80 else 'mid'
+    # Reward a fresh cross in/near the relevant band. Direction without a
+    # fresh cross is still useful, but intentionally weaker.
+    if golden and band=='oversold' and rsi_dir=='up':
+        return {'direction':'bullish','strength':1.0,'rsi_direction':rsi_dir,'cross':'golden','band':band,'rsi':round(r_now,1),'k':round(k1,1),'d':round(d1,1)}
+    if death and band=='overbought' and rsi_dir=='down':
+        return {'direction':'bearish','strength':1.0,'rsi_direction':rsi_dir,'cross':'death','band':band,'rsi':round(r_now,1),'k':round(k1,1),'d':round(d1,1)}
+    if golden and rsi_dir=='up':
+        return {'direction':'bullish','strength':0.7,'rsi_direction':rsi_dir,'cross':'golden','band':band,'rsi':round(r_now,1),'k':round(k1,1),'d':round(d1,1)}
+    if death and rsi_dir=='down':
+        return {'direction':'bearish','strength':0.7,'rsi_direction':rsi_dir,'cross':'death','band':band,'rsi':round(r_now,1),'k':round(k1,1),'d':round(d1,1)}
+    if rsi_dir=='up' and k1>d1:
+        return {'direction':'bullish','strength':0.4,'rsi_direction':rsi_dir,'cross':'holding_golden','band':band,'rsi':round(r_now,1),'k':round(k1,1),'d':round(d1,1)}
+    if rsi_dir=='down' and k1<d1:
+        return {'direction':'bearish','strength':0.4,'rsi_direction':rsi_dir,'cross':'holding_death','band':band,'rsi':round(r_now,1),'k':round(k1,1),'d':round(d1,1)}
+    return {'direction':'neutral','strength':0.0,'rsi_direction':rsi_dir,'cross':'none','band':band,'rsi':round(r_now,1),'k':round(k1,1),'d':round(d1,1)}
