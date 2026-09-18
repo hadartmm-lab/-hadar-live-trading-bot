@@ -6,6 +6,7 @@ from advanced_patterns import (
     market_regime, bos_choch, impulse_fib,
 )
 from datafeeds import market_df
+from config import settings
 
 
 def _add(points, bucket, reason, checklist, key, state='ok'):
@@ -19,6 +20,20 @@ async def analyze_symbol(symbol:str, asset_type:str, vix_bias:str='neutral'):
     dfs={}; sources={}
     for tf in ['1h','4h','12h','1d']:
         dfs[tf], sources[tf] = await market_df(symbol,tf,asset_type)
+    return analyze_frames(dfs, symbol=symbol, asset_type=asset_type, vix_bias=vix_bias, sources=sources)
+
+
+def analyze_frames(dfs:dict, symbol:str='-', asset_type:str='crypto', vix_bias:str='neutral', sources:dict|None=None):
+    """Analyze already-closed OHLCV frames using the exact live scoring path.
+
+    Keeping the scoring in one synchronous function lets the live app and the
+    historical backtest share identical weights, rounding and gate logic.
+    """
+    sources = sources or {tf:'provided' for tf in dfs}
+    required = ('1h','4h','12h','1d')
+    missing_tf = [tf for tf in required if tf not in dfs or dfs[tf] is None or dfs[tf].empty]
+    if missing_tf:
+        raise ValueError(f'Missing/empty timeframe(s): {", ".join(missing_tf)}')
 
     L=[0.0,[]]; S=[0.0,[]]
     checklist={}
@@ -204,11 +219,11 @@ async def analyze_symbol(symbol:str, asset_type:str, vix_bias:str='neutral'):
     trigger_count=sum(bool(x) for x in trigger_flags)
 
     # Stage is deliberately stricter than the score: READY needs direction, structure and triggers.
-    if bias!='NEUTRAL' and score>=78 and gap>=18 and core_alignment and daily_not_opposite and trigger_count>=2:
+    if bias!='NEUTRAL' and score>=settings.ready_score and gap>=18 and core_alignment and daily_not_opposite and trigger_count>=2:
         stage='READY'
-    elif bias!='NEUTRAL' and score>=68 and gap>=14 and core_alignment and trigger_count>=1:
+    elif bias!='NEUTRAL' and score>=settings.developing_score and gap>=14 and core_alignment and trigger_count>=1:
         stage='DEVELOPING'
-    elif bias!='NEUTRAL' and score>=55 and gap>=10:
+    elif bias!='NEUTRAL' and score>=settings.watch_score and gap>=10:
         stage='WATCH'
     else:
         stage='NO TRADE'
@@ -233,15 +248,17 @@ async def analyze_symbol(symbol:str, asset_type:str, vix_bias:str='neutral'):
     confidence = ('HIGH' if stage=='READY' and score>=85 and gap>=25 else
                   'MEDIUM' if stage in ('READY','DEVELOPING') else
                   'LOW' if bias!='NEUTRAL' else 'NEUTRAL')
-    setup_power = 'ELITE' if score>=90 and gap>=25 and core_alignment else 'STRONG' if score>=78 and gap>=18 else 'BUILDING' if score>=68 else 'WATCH' if score>=55 else 'LOW'
+    setup_power = 'ELITE' if score>=90 and gap>=25 and core_alignment else 'STRONG' if score>=settings.ready_score and gap>=18 else 'BUILDING' if score>=settings.developing_score else 'WATCH' if score>=settings.watch_score else 'LOW'
     return {
         'symbol':symbol,'asset_type':asset_type,'direction':direction,'bias':bias,'stage':stage,'confidence':confidence,'score':score,
         'long_score':lscore,'short_score':sscore,'gap':gap,'price':price,
-        'setup_power':setup_power,'trigger_count':trigger_count,'core_alignment':core_alignment,'missing_confirmations':missing,'checklist':checklist,
+        'setup_power':setup_power,'trigger_count':trigger_count,'trigger_total':len(trigger_flags),'core_alignment':core_alignment,'daily_not_opposite':daily_not_opposite,'missing_confirmations':missing,'checklist':checklist,
         'one_hour_candles':c1,'fib':fib,'wyckoff':wy,'volume_ratio_4h':round(vr,2),
         'rsi_divergence_4h':div4,'rsi_divergence_12h':div12,'divergence_sync':div_sync,'rsi_momentum':rsi_momentum,
         'market_regime_12h':regime12,'market_regime_4h':regime4,'bos_12h':bos12,'bos_4h':bos4,
         'liquidity_sweep':sweep,'support_resistance':sr,'pattern':pattern,
         'sources':sources,'data_source':sources.get('1h','-'),
+        'score_breakdown':{'raw_long':round(rawL,1),'raw_short':round(rawS,1),'final_long':lscore,'final_short':sscore,'conflict_haircut':0.35,'bull_alignment_count':bull_align,'bear_alignment_count':bear_align},
+        'long_reasons':L[1][-24:],'short_reasons':S[1][-24:],
         'reasons':(L[1] if lscore>=sscore else S[1])[-18:],'updated_at':int(time.time())
     }

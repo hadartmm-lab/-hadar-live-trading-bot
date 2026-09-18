@@ -16,6 +16,7 @@ from indicators import (
     wyckoff_heuristic,
 )
 from advanced_patterns import liquidity_sweep, support_resistance, flag_wedge_pattern, market_regime, bos_choch, impulse_fib
+from engine import analyze_frames
 
 THRESHOLDS = (55, 68, 78, 90)
 _TF_DELTA = {
@@ -43,110 +44,21 @@ def _closed_slice(df: pd.DataFrame, decision_time: pd.Timestamp, timeframe: str)
     return df.loc[closes <= decision_time].copy().reset_index(drop=True)
 
 
+def score_snapshot_detail(df12, df4, df1h, df1d, vix_bias='neutral', asset_type='crypto'):
+    """Run the exact live engine on a historical closed-candle snapshot."""
+    dfs={'12h':df12,'4h':df4,'1h':df1h,'1d':df1d}
+    return analyze_frames(
+        dfs, symbol='BACKTEST', asset_type=asset_type, vix_bias=vix_bias,
+        sources={tf:'historical' for tf in dfs},
+    )
+
+
 def score_snapshot(df12, df4, df1h, df1d, vix_bias='neutral', asset_type='crypto'):
-    """Score one historical snapshot using only the data supplied to it."""
-    L = S = 0.0
-    structs = {}
-    for tf, df, w in [('12h', df12, 12), ('4h', df4, 10), ('1d', df1d, 5)]:
-        st = structure(df); structs[tf] = st
-        if st == 'bullish': L += w
-        elif st == 'bearish': S += w
-
-    reg = market_regime(df12)
-    if reg['regime'] == 'trend':
-        pts = 6 * reg['strength']
-        if reg['direction'] == 'bullish': L += pts
-        elif reg['direction'] == 'bearish': S += pts
-
-    for df, w in [(df12, 5), (df4, 4)]:
-        _, d = supertrend(df, 10, 3.0)
-        if int(d.iloc[-1]) == 1: L += w
-        else: S += w
-
-    for df, maxp in [(df12, 7), (df4, 6)]:
-        b = bos_choch(df)
-        if b['direction'] == 'bullish': L += maxp * b['strength']
-        elif b['direction'] == 'bearish': S += maxp * b['strength']
-
-    d4 = rsi_divergence_detail(df4); d12 = rsi_divergence_detail(df12)
-    if d4['type'] == 'bullish': L += 8 * d4['strength']
-    elif d4['type'] == 'bearish': S += 8 * d4['strength']
-    if d12['type'] == 'bullish': L += 12 * d12['strength']
-    elif d12['type'] == 'bearish': S += 12 * d12['strength']
-    if d4['type'] == d12['type'] and d4['type'] != 'none':
-        if d4['type'] == 'bullish': L += 4
-        else: S += 4
-
-    moms = []
-    for df, maxp in [(df4, 4), (df12, 6), (df1d, 3)]:
-        m = stoch_rsi_signal(df); moms.append(m)
-        if m['direction'] == 'bullish': L += maxp * m['strength']
-        elif m['direction'] == 'bearish': S += maxp * m['strength']
-    if sum(m['direction'] == 'bullish' for m in moms) >= 2: L += 3
-    elif sum(m['direction'] == 'bearish' for m in moms) >= 2: S += 3
-
-    fib = impulse_fib(df12)
-    if fib.get('status') == 'healthy_pullback':
-        pts = 9 * (.75 + .25 * fib.get('impulse_quality', .5))
-        if fib.get('direction') == 'bullish': L += pts
-        elif fib.get('direction') == 'bearish': S += pts
-
-    wy = wyckoff_heuristic(df12)
-    if wy == 'accumulation_zone': L += 4
-    elif wy == 'distribution_zone': S += 4
-    elif wy == 'markup': L += 3
-    elif wy == 'markdown': S += 3
-
-    vr = volume_confirmation(df4)
-    if vr >= 1.25:
-        if structs['4h'] == 'bullish': L += 3
-        elif structs['4h'] == 'bearish': S += 3
-
-    sw = liquidity_sweep(df4)
-    if sw['type'] == 'bullish': L += 4 * sw['strength']
-    elif sw['type'] == 'bearish': S += 4 * sw['strength']
-
-    sr = support_resistance(df12)
-    price = float(df1h.close.iloc[-1])
-    sup = sr.get('support'); res = sr.get('resistance')
-    if sup and sup.get('touches', 0) >= 2 and abs(price - sup['price']) / max(price, 1e-9) < .018:
-        L += 2
-    elif res and res.get('touches', 0) >= 2 and abs(res['price'] - price) / max(price, 1e-9) < .018:
-        S += 2
-
-    pat = flag_wedge_pattern(df12)
-    if pat['pattern'] in ('bull_flag', 'falling_wedge'): L += 2 * pat['confidence']
-    elif pat['pattern'] in ('bear_flag', 'rising_wedge'): S += 2 * pat['confidence']
-
-    c = candle_bias_1h(df1h)
-    if c == 'bullish': L += 2
-    elif c == 'bearish': S += 2
-
-    # Same conflict haircut as live engine.
-    raw_l, raw_s = L, S
-    L = max(0.0, raw_l - raw_s * .35)
-    S = max(0.0, raw_s - raw_l * .35)
-
-    # Same multi-timeframe agreement bonus as live engine.
-    st12 = 'bullish' if int(supertrend(df12, 10, 3.0)[1].iloc[-1]) == 1 else 'bearish'
-    st4 = 'bullish' if int(supertrend(df4, 10, 3.0)[1].iloc[-1]) == 1 else 'bearish'
-    bull_align = sum([
-        structs['12h'] == 'bullish', structs['4h'] == 'bullish',
-        st12 == 'bullish', st4 == 'bullish', reg.get('direction') == 'bullish'
-    ])
-    bear_align = sum([
-        structs['12h'] == 'bearish', structs['4h'] == 'bearish',
-        st12 == 'bearish', st4 == 'bearish', reg.get('direction') == 'bearish'
-    ])
-    if bull_align >= 4: L += 3
-    if bear_align >= 4: S += 3
-
-    if asset_type == 'stock':
-        if vix_bias == 'risk_on': L *= 1.05; S *= .97
-        elif vix_bias == 'risk_off': S *= 1.05; L *= .97
-
-    ls, ss = min(100, L), min(100, S)
-    return ('LONG', ls, ss) if ls >= ss else ('SHORT', ss, ls)
+    """Backward-compatible score tuple, now sourced from the live engine."""
+    r=score_snapshot_detail(df12,df4,df1h,df1d,vix_bias=vix_bias,asset_type=asset_type)
+    if r['long_score'] >= r['short_score']:
+        return 'LONG', float(r['long_score']), float(r['short_score'])
+    return 'SHORT', float(r['short_score']), float(r['long_score'])
 
 
 def _trade_stats(trades: List[dict]) -> dict:
@@ -183,12 +95,27 @@ def _trade_stats(trades: List[dict]) -> dict:
     }
 
 
+def _qualifies(row: dict, threshold: float) -> bool:
+    """Mirror the live gate family for each calibration threshold."""
+    if row.get('bias') not in ('LONG','SHORT') or row.get('score',0) < threshold:
+        return False
+    gap=float(row.get('gap',0))
+    if threshold >= 78:
+        return (gap >= 18 and bool(row.get('core_alignment')) and
+                bool(row.get('daily_not_opposite')) and int(row.get('trigger_count',0)) >= 2)
+    if threshold >= 68:
+        return gap >= 14 and bool(row.get('core_alignment')) and int(row.get('trigger_count',0)) >= 1
+    if threshold >= 55:
+        return gap >= 10
+    return True
+
+
 def _non_overlapping(candidates: List[dict], threshold: float) -> List[dict]:
-    """One position at a time, independently for each score threshold."""
+    """One position at a time, with the same gate family used by live decisions."""
     selected = []
     available_at = pd.Timestamp.min.tz_localize('UTC')
     for row in candidates:
-        if row['score'] < threshold:
+        if not _qualifies(row, threshold):
             continue
         entry_time = pd.Timestamp(row['entry_time'])
         if entry_time < available_at:
@@ -251,7 +178,10 @@ def backtest_frames(
         if len(s12) < min_bars or min(len(s4), len(s1), len(sd)) < 30:
             continue
 
-        direction, score, opposite_score = score_snapshot(s12, s4, s1, sd)
+        analysis = score_snapshot_detail(s12, s4, s1, sd)
+        direction = 'LONG' if analysis['long_score'] >= analysis['short_score'] else 'SHORT'
+        score = max(float(analysis['long_score']), float(analysis['short_score']))
+        opposite_score = min(float(analysis['long_score']), float(analysis['short_score']))
 
         entry_idx = i + 1
         exit_idx = i + horizon_12h_bars
@@ -272,6 +202,12 @@ def backtest_frames(
             'score': round(float(score), 1),
             'opposite_score': round(float(opposite_score), 1),
             'gap': round(float(score - opposite_score), 1),
+            'bias': analysis.get('bias','NEUTRAL'),
+            'stage': analysis.get('stage','NO TRADE'),
+            'core_alignment': bool(analysis.get('core_alignment')),
+            'daily_not_opposite': bool(analysis.get('daily_not_opposite')),
+            'trigger_count': int(analysis.get('trigger_count',0)),
+            'trigger_total': int(analysis.get('trigger_total',6)),
             'entry': round(entry, 8),
             'exit': round(exitp, 8),
             'return_pct': round(ret * 100, 4),

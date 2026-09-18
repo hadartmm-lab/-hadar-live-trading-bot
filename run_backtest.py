@@ -8,19 +8,23 @@ from pathlib import Path
 import pandas as pd
 
 from backtest import backtest_frames
-from datafeeds import history_df
+from datafeeds import history_df, closed_bars_only
 
 
 def resample_from_1h(df: pd.DataFrame, rule: str) -> pd.DataFrame:
+    """Build only complete crypto candles from a canonical 1H stream."""
     x = df.copy()
     x['ts'] = pd.to_datetime(x['ts'], utc=True)
-    return (
+    expected = {'4h':4, '12h':12, '1D':24}[rule]
+    y = (
         x.set_index('ts')
         .resample(rule, origin='epoch')
-        .agg({'open':'first','high':'max','low':'min','close':'last','volume':'sum'})
-        .dropna()
-        .reset_index()
+        .agg(open=('open','first'), high=('high','max'), low=('low','min'),
+             close=('close','last'), volume=('volume','sum'), bars=('close','count'))
+        .dropna(subset=['open','high','low','close'])
     )
+    y = y[y['bars'] == expected].drop(columns='bars').reset_index()
+    return y
 
 
 async def main_async(symbol: str, days: int, horizon: int, output: str | None):
@@ -28,6 +32,9 @@ async def main_async(symbol: str, days: int, horizon: int, output: str | None):
     # This guarantees consistent boundaries and prevents cross-feed timestamp drift.
     h1 = await history_df(symbol, '1h', 'crypto', days=days)
     h1 = h1.sort_values('ts').drop_duplicates('ts').reset_index(drop=True)
+    # History endpoints may include the currently-forming 1H bar. Remove it before
+    # deriving higher timeframes so the last 4H/12H/1D candle cannot be partial.
+    h1 = closed_bars_only(h1, '1h')
     h4 = resample_from_1h(h1, '4h')
     h12 = resample_from_1h(h1, '12h')
     d1 = resample_from_1h(h1, '1D')

@@ -141,23 +141,33 @@ def fib_summary(r) -> str:
     fib = r.get('fib', {}) or {}
     status = fib.get('status','none')
     direction = fib.get('direction','none')
+    lo, hi, p = fib.get('zone_low'), fib.get('zone_high'), fib.get('price')
+    zone = ''
+    if isinstance(lo,(int,float)) and isinstance(hi,(int,float)):
+        zone = f' {fmt_price(lo)}–{fmt_price(hi)}'
     if status == 'healthy_pullback':
-        return f'Healthy {direction}'
-    if status == 'watch':
-        return 'Watch zone'
+        return f'Healthy {direction}{zone}'
+    if status in ('watch','in_zone'):
+        pos = ''
+        if isinstance(p,(int,float)) and isinstance(lo,(int,float)) and isinstance(hi,(int,float)):
+            pos = ' • above' if p > hi else ' • below' if p < lo else ' • inside'
+        return f'Watch {direction}{zone}{pos}'
     return 'No confirmation'
 
 
 def target_side(r) -> str:
-    return 'bullish' if r.get('long_score',0) >= r.get('short_score',0) else 'bearish'
+    l=float(r.get('long_score',0) or 0); sh=float(r.get('short_score',0) or 0)
+    if l == sh: return 'neutral'
+    return 'bullish' if l > sh else 'bearish'
 
 
 def edge_summary(r) -> str:
     direction = str(r.get('bias') or r.get('direction','WAIT')).upper()
     gap = float(r.get('gap',0))
     score = float(r.get('score',0))
-    if direction == 'WAIT':
-        return 'Mixed'
+    if direction in ('WAIT','NEUTRAL'):
+        lean = 'LONG' if float(r.get('long_score',0)) > float(r.get('short_score',0)) else 'SHORT' if float(r.get('short_score',0)) > float(r.get('long_score',0)) else 'NONE'
+        return f'Neutral — slight {lean} lean, no trade edge' if lean != 'NONE' else 'Neutral — mixed, no trade edge'
     if gap >= 25 and score >= 75:
         return f'Strong {direction} bias'
     if gap >= 15:
@@ -188,8 +198,17 @@ def checklist_pills(r):
     target = target_side(r)
     for label, val in keys:
         sv = str(val or 'none').lower()
-        ok = (target in sv) or (label == 'Fib' and 'healthy' in sv)
-        out.append(pill(('✓ ' if ok else '○ ') + label, 'green' if ok else 'gray'))
+        if label == 'Fib':
+            ok = target != 'neutral' and sv == f'{target} healthy'
+        else:
+            ok = target != 'neutral' and target in sv
+        if 'bullish' in sv: state=' ↑'
+        elif 'bearish' in sv: state=' ↓'
+        elif 'range' in sv: state=' RANGE'
+        elif 'neutral' in sv: state=' NEUTRAL'
+        elif 'healthy' in sv: state=' OK'
+        else: state=''
+        out.append(pill(('✓ ' if ok else '○ ') + label + state, 'green' if ok else 'gray'))
     return ''.join(out)
 
 
@@ -234,11 +253,11 @@ def render_card(r, rank=None):
           <div class='symbol'>{rank_html}{icon} {esc(symbol)}</div>
           <div class='subtitle'>{esc(asset)}</div>
           <div class='verdict'>{esc(verdict)}</div>
-          <div style='margin-top:.45rem'>{pill(stage)}{pill('BIAS ' + str(bias))}{pill('CONF ' + str(confidence))}</div>
+          <div style='margin-top:.45rem'>{pill(stage)}{pill('BIAS ' + str(bias))}{pill('CONF ' + str(confidence))}{pill('POWER ' + str(power))}</div>
         </div>
         <div class='power {power_class(power)}'>
           <div class='power-score'>{score:.0f}</div>
-          <div class='power-label'>SETUP POWER</div>
+          <div class='power-label'>SETUP SCORE</div>
         </div>
       </div>
     </div>
@@ -253,12 +272,12 @@ def render_card(r, rank=None):
     <div class='summary-grid'>
       <div class='summary'><div class='s-label'>Bias</div><div class='s-value'>{esc(bias)}</div></div>
       <div class='summary'><div class='s-label'>Action</div><div class='s-value'>{esc(stage)}</div></div>
-      <div class='summary'><div class='s-label'>Price</div><div class='s-value'>{fmt_price(r.get('price'))}</div></div>
+      <div class='summary'><div class='s-label'>Price (last closed 1H)</div><div class='s-value'>{fmt_price(r.get('price'))}</div></div>
       <div class='summary'><div class='s-label'>Confidence</div><div class='s-value'>{esc(confidence)}</div></div>
       <div class='summary'><div class='s-label'>Market State</div><div class='s-value'>{esc(market_state)}</div></div>
       <div class='summary'><div class='s-label'>RSI Divergence</div><div class='s-value'>{esc(rsi_summary(r))}</div></div>
       <div class='summary'><div class='s-label'>Fib 0.50–0.618</div><div class='s-value'>{esc(fib_summary(r))}</div></div>
-      <div class='summary'><div class='s-label'>Triggers</div><div class='s-value'>{esc(r.get('trigger_count',0))}/5</div></div>
+      <div class='summary'><div class='s-label'>Triggers</div><div class='s-value'>{esc(r.get('trigger_count',0))}/{esc(r.get('trigger_total',6))}</div></div>
     </div>
     <div class='quest'>
       <div class='quest-title'>CONFIRMED CHECKLIST</div>
@@ -296,8 +315,14 @@ def render_card(r, rank=None):
             st.write('Support / resistance:', r.get('support_resistance'))
             st.write('4H volume ratio:', r.get('volume_ratio_4h'))
         st.markdown('**Why the score**')
-        for reason in r.get('reasons', []):
-            st.write('•', reason)
+        bd=r.get('score_breakdown',{}) or {}
+        if bd:
+            st.write(f"Raw LONG {bd.get('raw_long','-')} • Raw SHORT {bd.get('raw_short','-')} • Final LONG {bd.get('final_long','-')} • Final SHORT {bd.get('final_short','-')}")
+            st.caption('Final score applies the 35% opposing-evidence haircut and any multi-timeframe alignment bonus.')
+        st.markdown('**LONG evidence**')
+        for reason in r.get('long_reasons', []): st.write('•', reason)
+        st.markdown('**SHORT evidence**')
+        for reason in r.get('short_reasons', []): st.write('•', reason)
         st.markdown('**Data sources**')
         for tf, src in (r.get('sources') or {}).items():
             st.write(f'{tf}: {src}')
@@ -329,7 +354,7 @@ with c3:
     if st.button('⚡ RUN SCAN', use_container_width=True):
         st.cache_data.clear()
 
-bucket = int(time.time() // 60)
+bucket = int(time.time() // max(15, int(settings.scan_interval)))
 with st.spinner('Reading market structure and building setup scores…'):
     vix, rows, ts = scan_all_cached(bucket)
 

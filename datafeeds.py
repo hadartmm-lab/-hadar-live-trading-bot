@@ -10,7 +10,7 @@ BINANCE_ENDPOINTS = [
     'https://api3.binance.com/api/v3/klines',
     'https://api.binance.com/api/v3/klines',
 ]
-_HEADERS = {'User-Agent': 'Mozilla/5.0 HadarBot/2.3'}
+_HEADERS = {'User-Agent': 'Mozilla/5.0 HadarBot/3.6'}
 
 
 _INTERVAL_DELTA = {

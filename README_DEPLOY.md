@@ -1,25 +1,21 @@
-Hadar Alpha Arena v3.1 Polished
+# Hadar Alpha Arena v3.6 Audited Precision
 
-Main upgrades
-- More premium UI.
-- Better layout hierarchy.
-- Cleaner cards with human-readable verdicts.
-- Gap/source removed from main view.
-- Better "Current verdict" and "Next mission" messaging.
-- Data source stays inside tactical details instead of cluttering the main view.
-- Better mobile readability.
+Upload the full contents of this folder to the GitHub repository used by Streamlit.
 
-Update GitHub
-Replace at least:
+Important files:
 - app.py
-
-Keep the latest logic files already uploaded from v3:
 - engine.py
 - indicators.py
 - advanced_patterns.py
+- datafeeds.py
 - backtest.py
 - run_backtest.py
-- datafeeds.py
+- config.py
+- vix_engine.py
+- notifier.py
+- requirements.txt
+- .env.example
 
-Then in Streamlit:
-- Manage app -> Reboot app
+Then in Streamlit: **Manage app → Reboot app**.
+
+Default score gates: WATCH 55, DEVELOPING 68, READY 78. If you override them with environment variables, v3.6 uses those values consistently in the live engine.

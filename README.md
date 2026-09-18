@@ -1,4 +1,4 @@
-# Hadar Live Trading Bot v3.5 Closed-Candle Precision
+# Hadar Live Trading Bot v3.6 Audited Precision
 
 
 Multi-asset swing-trading decision engine. Core analysis is Daily / 12H / 4H, with 1H candle direction as a light confirmation layer. No 15-minute layer.
@@ -46,3 +46,16 @@ This is an analytical decision-support tool, not a guarantee of future performan
 Run: `python run_backtest.py --symbol BTCUSDT --days 730 --horizon 4`
 
 Important: the calibration report is still not a brokerage fill simulator. It does not assume leverage, intrabar stop fills, fees or slippage unless separately modeled.
+
+
+## v3.6 Audit fixes
+- Live and backtest now share the exact same scoring function, weights, rounding and gate logic.
+- Backtest threshold samples apply the live WATCH / DEVELOPING / READY gate families instead of score-only filtering.
+- Historical 1H data drops the forming candle; 4H / 12H / 1D resamples require complete source-bar counts.
+- UI trigger counter correctly shows 6 trigger families (BOS/CHoCH, RSI divergence, RSI momentum, Fib, liquidity, pattern).
+- Neutral verdict wording no longer says “Moderate NEUTRAL bias”.
+- Checklist pills display direction and Fib is green only when its direction matches the dominant setup.
+- Score details expose raw LONG/SHORT evidence, the 35% conflict haircut and final scores.
+- Environment score thresholds are now actually honored by the engine; defaults remain WATCH 55 / DEVELOPING 68 / READY 78.
+- RSI handles zero-loss / flat edge cases correctly and Stoch-RSI band labeling is cross-direction aware.
+- The number in the large badge is a setup score, not a probability of success.

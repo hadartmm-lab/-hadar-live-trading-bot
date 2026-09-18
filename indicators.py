@@ -12,7 +12,11 @@ def rsi(s: pd.Series, period: int = 14):
     up = d.clip(lower=0).ewm(alpha=1/period, adjust=False).mean()
     dn = (-d.clip(upper=0)).ewm(alpha=1/period, adjust=False).mean()
     rs = up / dn.replace(0, np.nan)
-    return 100 - (100 / (1 + rs))
+    out = 100 - (100 / (1 + rs))
+    # Wilder RSI edge cases: no losses => 100, no gains and no losses => 50.
+    out = out.mask((dn == 0) & (up > 0), 100.0)
+    out = out.mask((dn == 0) & (up == 0), 50.0)
+    return out
 
 
 def atr(df: pd.DataFrame, period: int = 10):
@@ -191,7 +195,20 @@ def stoch_rsi_signal(df: pd.DataFrame, rsi_period=14, stoch_period=14, k_period=
     d1=float(d.iloc[-1]) if pd.notna(d.iloc[-1]) else 50.0
     golden = k0 <= d0 and k1 > d1
     death = k0 >= d0 and k1 < d1
-    band='oversold' if max(k0,d0,k1,d1) <= 30 or min(k0,d0,k1,d1) <= 20 else 'overbought' if min(k0,d0,k1,d1) >= 70 or max(k0,d0,k1,d1) >= 80 else 'mid'
+    vals=(k0,d0,k1,d1)
+    oversold_touch=min(vals) <= 20
+    oversold_near=min(vals) <= 30
+    overbought_touch=max(vals) >= 80
+    overbought_near=max(vals) >= 70
+    # Classify the band in the context of the actual cross direction. This avoids
+    # labeling a fast move that touched both extremes as the wrong band.
+    if golden:
+        band='oversold' if (oversold_touch or oversold_near) else 'mid'
+    elif death:
+        band='overbought' if (overbought_touch or overbought_near) else 'mid'
+    else:
+        cur=(k1+d1)/2
+        band='oversold' if cur <= 30 else 'overbought' if cur >= 70 else 'mid'
     # Reward a fresh cross in/near the relevant band. Direction without a
     # fresh cross is still useful, but intentionally weaker.
     if golden and band=='oversold' and rsi_dir=='up':
